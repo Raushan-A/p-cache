@@ -8,12 +8,14 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public class DiskStore<T> implements Store<T> {
 	private final int BUCKET_COUNT = 16;
-	private final long BUCKET_ELEMENTS = 4;
-	private final long BUCKET_SIZE = BUCKET_ELEMENTS * 8; // 4 element of size 64 bit (long)
+	private final long BUCKET_ELEMENTS_COUNT = 4;
+	private final long BUCKET_SIZE = BUCKET_ELEMENTS_COUNT * 8; // 4 element of size 64 bit (long)
 	private final String name;
 	private RandomAccessFile indexFile;
 	private RandomAccessFile dataFile;
@@ -91,22 +93,59 @@ public class DiskStore<T> implements Store<T> {
 	@Override
 	public T remove(String key) {
 		try {
-			Optional<Long> index = findKeyIndex(key);
-			if (index.isPresent()) {
-				indexFile.seek(index.get());
-				long dataPointer = indexFile.readLong();
-				T value = deleteKeyValueData(dataPointer);
+			int bucket = bucket(key);
+			indexFile.seek(bucket * BUCKET_SIZE);
 
-				indexFile.seek(index.get());
-				indexFile.writeLong(0);
+			int i = 0;
+			long dataPointer = 0;
+			for (;i < BUCKET_ELEMENTS_COUNT; i++) {
+				dataPointer = indexFile.readLong();
+				if (dataPointer == 0) {
+					break;
+				}
 
-				return value;
+				String readKey = readKey(dataPointer);
+				if (readKey.equals(key)) {
+					break;
+				}
 			}
+
+			if (dataPointer == 0 || i == BUCKET_ELEMENTS_COUNT) {
+				return null;
+			}
+
+			T value = deleteKeyValueData(dataPointer);
+
+			// Shifting next elements in bucket if present
+			deleteAndShiftElements(i, bucket);
+
+			return value;
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
 
-		return null;
+	private void deleteAndShiftElements(int index, long bucket) throws IOException {
+		long indexPointer = bucket * BUCKET_SIZE + index * 8L;
+		indexFile.seek(indexPointer);
+		indexFile.skipBytes(8);
+
+		List<Long> nextElements = new ArrayList<>();
+		for (int i = index + 1; i < BUCKET_ELEMENTS_COUNT; i++) {
+			long dp = indexFile.readLong();
+			if (dp == 0) {
+				break;
+			}
+
+			nextElements.add(dp);
+		}
+
+		indexFile.seek(indexPointer);
+		for (long element : nextElements) {
+			indexFile.writeLong(element);
+		}
+
+		indexFile.writeLong(0);
 	}
 
 	@Override
@@ -126,11 +165,11 @@ public class DiskStore<T> implements Store<T> {
 		int bucket = bucket(key);
 		indexFile.seek(bucket * BUCKET_SIZE);
 
-		for (int i = 0; i < BUCKET_ELEMENTS; i++) {
+		for (int i = 0; i < BUCKET_ELEMENTS_COUNT; i++) {
 			long indexPointer = indexFile.getFilePointer();
 			long dataPointer = indexFile.readLong();
-			if (dataPointer == 0) {  // Deleted
-				continue;
+			if (dataPointer == 0) {  // No more elements
+				return Optional.empty();
 			}
 
 			String readKey = readKey(dataPointer);
@@ -144,10 +183,10 @@ public class DiskStore<T> implements Store<T> {
 	private Optional<Long> findEmptyIndex(String key) throws IOException {
 		int hash = bucket(key);
 		indexFile.seek(hash * BUCKET_SIZE);
-		for (int i = 0; i < BUCKET_ELEMENTS; i++) {
+		for (int i = 0; i < BUCKET_ELEMENTS_COUNT; i++) {
 			long indexPointer = indexFile.getFilePointer();
 			long dataPointer = indexFile.readLong();
-			if (dataPointer == 0) {  // Deleted
+			if (dataPointer == 0) {
 				return Optional.of(indexPointer);
 			}
 		}
