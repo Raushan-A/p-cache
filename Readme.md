@@ -23,6 +23,8 @@ DiskStore creates two file
 1. .idx file to store hashtable data
 2. .dat file to store serialized data 
 
+![DiskDtore.png](DiskDtore.png)
+
 ### Operations 
 
 #### Contains key
