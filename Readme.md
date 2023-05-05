@@ -74,6 +74,23 @@ DiskStore creates two file
       3. Write zero to current location in index file
       4. If any next element in bucket shift them up
 
+### Time complexity analysis
+
+File seek operation on most of operating system have time complexity O(1) and here read-write operation on disk also doesn't depend upon no. of elements
+
+**Get, Contains, Remove**
+
+* For avg case with good hash distribution it will just go to the bucket read-write data and return hence the time complexity `O(1)`
+* For worst case it will iterate over the elements in bucket hence the time complexity `O(n)` 
+
+**Put**
+
+* For avg case with good hash distribution it will just go to the bucket read-write data and return hence the time complexity `O(1)`
+* For worst case it will iterate over the elements in bucket hence the time complexity `O(n)`.
+In case of bucket overflow case it will have to iterate over all elements once for re-hashing, will take more time, still no nested iteration hence the time complexity `O(n)`
+
+
+
 ### TODOs
 
 1. Handle bucket overflow, increase no. of bucket and re-distribute elements 
